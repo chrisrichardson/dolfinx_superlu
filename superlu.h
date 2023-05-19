@@ -10,6 +10,6 @@
 /// @param bvec RHS vector
 /// @param uvec Solution vector
 template <typename T>
-int superlu_solver(MPI_Comm comm, dolfinx::la::MatrixCSR<T>& Amat,
+int superlu_solver(MPI_Comm comm, const dolfinx::la::MatrixCSR<T>& Amat,
                    const dolfinx::la::Vector<T>& bvec,
                    dolfinx::la::Vector<T>& uvec);

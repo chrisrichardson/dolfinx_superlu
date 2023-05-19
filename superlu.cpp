@@ -8,7 +8,7 @@
 using namespace dolfinx;
 
 template <typename T>
-int superlu_solver(MPI_Comm comm, la::MatrixCSR<T>& Amat,
+int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
                    const la::Vector<T>& bvec, la::Vector<T>& uvec)
 {
   int size = dolfinx::MPI::size(comm);
@@ -53,22 +53,25 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<T>& Amat,
 
   if constexpr (std::is_same_v<T, double>)
   {
+    auto Amatdata = const_cast<double*>(Amat.values().data());
     dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
-                                   Amat.values().data(), cols.data(),
-                                   row_ptr.data(), SLU_NR_loc, SLU_D, SLU_GE);
+                                   Amatdata, cols.data(), row_ptr.data(),
+                                   SLU_NR_loc, SLU_D, SLU_GE);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
+    auto Amatdata = const_cast<float*>(Amat.values().data());
     sCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
-                                   Amat.values().data(), cols.data(),
-                                   row_ptr.data(), SLU_NR_loc, SLU_S, SLU_GE);
+                                   Amatdata, cols.data(), row_ptr.data(),
+                                   SLU_NR_loc, SLU_S, SLU_GE);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
-    zCreate_CompRowLoc_Matrix_dist(
-        &A, m, n, nnz_loc, m_loc, first_row,
-        reinterpret_cast<doublecomplex*>(Amat.values().data()), cols.data(),
-        row_ptr.data(), SLU_NR_loc, SLU_Z, SLU_GE);
+    auto Amatdata = const_cast<std::complex<double>*>(Amat.values().data());
+    zCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
+                                   reinterpret_cast<doublecomplex*>(Amatdata),
+                                   cols.data(), row_ptr.data(), SLU_NR_loc,
+                                   SLU_Z, SLU_GE);
   }
 
   // RHS
@@ -144,15 +147,15 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<T>& Amat,
 }
 
 // Explicit instantiation
-template int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
+template int superlu_solver(MPI_Comm comm, const la::MatrixCSR<double>& Amat,
                             const la::Vector<double>& bvec,
                             la::Vector<double>& uvec);
 
-template int superlu_solver(MPI_Comm comm, la::MatrixCSR<float>& Amat,
+template int superlu_solver(MPI_Comm comm, const la::MatrixCSR<float>& Amat,
                             const la::Vector<float>& bvec,
                             la::Vector<float>& uvec);
 
 template int superlu_solver(MPI_Comm comm,
-                            la::MatrixCSR<std::complex<double>>& Amat,
+                            const la::MatrixCSR<std::complex<double>>& Amat,
                             const la::Vector<std::complex<double>>& bvec,
                             la::Vector<std::complex<double>>& uvec);
