@@ -13,15 +13,14 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   gridinfo3d_t grid;
   superlu_gridinit3d(comm, 1, 1, size, &grid);
 
-  // Number of local rows
-  int m_loc = Amat.num_owned_rows();
-  int m = Amat.index_map(0)->size_global();
-
   // Global size
+  int m = Amat.index_map(0)->size_global();
   int n = Amat.index_map(1)->size_global();
-
   if (m != n)
     throw std::runtime_error("Can't solve non-square system");
+
+  // Number of local rows
+  int m_loc = Amat.num_owned_rows();
 
   // First row
   int first_row = Amat.index_map(0)->local_range()[0];
@@ -48,10 +47,7 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   // RHS
   int ldb = m_loc;
   int nrhs = 1;
-  double* berr;
-
-  if (!(berr = doubleMalloc_dist(nrhs)))
-    ABORT("Malloc fails for berr[].");
+  std::vector<double> berr(nrhs);
 
   superlu_dist_options_t options;
   set_default_options_dist(&options);
@@ -70,11 +66,12 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   SuperLUStat_t stat;
   PStatInit(&stat);
 
+  // Copy b to u (SuperLU replaces RHS with solution)
   std::copy(bvec.array().begin(), std::next(bvec.array().begin(), m_loc),
             uvec.mutable_array().begin());
 
   pdgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
-            nrhs, &grid, &LUstruct, &SOLVEstruct, berr, &stat, &info);
+            nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
 
   if (info)
   { /* Something is wrong */
@@ -82,10 +79,10 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
     fflush(stdout);
   }
 
-  SUPERLU_FREE(berr);
   PStatFree(&stat);
   superlu_gridexit3d(&grid);
 
+  // Update ghosts in u
   uvec.scatter_fwd();
   return 0;
 }
