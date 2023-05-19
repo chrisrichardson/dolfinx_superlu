@@ -100,7 +100,8 @@
 #include <vector>
 
 using namespace dolfinx;
-using T = PetscScalar;
+using T = float;
+using U = double;
 
 // Then follows the definition of the coefficient functions (for
 // :math:`f` and :math:`g`), which are derived from the
@@ -127,7 +128,7 @@ int main(int argc, char* argv[])
     auto part = mesh::create_cell_partitioner(mesh::GhostMode::shared_facet);
     auto mesh = std::make_shared<mesh::Mesh<double>>(
         mesh::create_rectangle(MPI_COMM_WORLD, {{{0.0, 0.0}, {2.0, 1.0}}},
-                               {32, 16}, mesh::CellType::triangle, part));
+                               {64, 32}, mesh::CellType::triangle, part));
 
     auto V = std::make_shared<fem::FunctionSpace<double>>(
         fem::create_functionspace(functionspace_form_poisson_a, "u", mesh));
@@ -142,13 +143,13 @@ int main(int argc, char* argv[])
 
     // Prepare and set Constants for the bilinear form
     auto kappa = std::make_shared<fem::Constant<T>>(2.0);
-    auto f = std::make_shared<fem::Function<T>>(V);
-    auto g = std::make_shared<fem::Function<T>>(V);
+    auto f = std::make_shared<fem::Function<T, U>>(V);
+    auto g = std::make_shared<fem::Function<T, U>>(V);
 
     // Define variational forms
-    auto a = std::make_shared<fem::Form<T>>(fem::create_form<T>(
+    auto a = std::make_shared<fem::Form<T, U>>(fem::create_form<T, U>(
         *form_poisson_a, {V, V}, {}, {{"kappa", kappa}}, {}));
-    auto L = std::make_shared<fem::Form<T>>(fem::create_form<T>(
+    auto L = std::make_shared<fem::Form<T, U>>(fem::create_form<T, U>(
         *form_poisson_L, {V}, {{"f", f}, {"g", g}}, {}, {}));
 
     // Now, the Dirichlet boundary condition (:math:`u = 0`) can be created
@@ -183,7 +184,7 @@ int main(int argc, char* argv[])
         });
     const auto bdofs = fem::locate_dofs_topological(
         *V->mesh()->topology_mutable(), *V->dofmap(), 1, facets);
-    auto bc = std::make_shared<const fem::DirichletBC<T>>(0.0, bdofs, V);
+    auto bc = std::make_shared<const fem::DirichletBC<T, U>>(0.0, bdofs, V);
 
     f->interpolate(
         [](auto x) -> std::pair<std::vector<T>, std::vector<std::size_t>>
@@ -218,7 +219,7 @@ int main(int argc, char* argv[])
     // .. code-block:: cpp
 
     // Compute solution
-    fem::Function<T> u(V);
+    fem::Function<T, U> u(V);
     la::SparsityPattern sp = fem::create_sparsity_pattern(*a);
     sp.finalize();
     la::MatrixCSR<T> A(sp);
@@ -228,16 +229,18 @@ int main(int argc, char* argv[])
     A.set(0.0);
     fem::assemble_matrix(A.mat_add_values(), *a, {bc});
     A.finalize();
-    fem::set_diagonal<T>(A.mat_set_values(), *V, {bc});
+    fem::set_diagonal<T, U>(A.mat_set_values(), *V, {bc});
 
     b.set(0.0);
     fem::assemble_vector(b.mutable_array(), *L);
-    fem::apply_lifting<T, double>(b.mutable_array(), {a}, {{bc}}, {}, T(1));
+    fem::apply_lifting<T, U>(b.mutable_array(), {a}, {{bc}}, {}, T(1));
     b.scatter_rev(std::plus<T>());
-    fem::set_bc<T, double>(b.mutable_array(), {bc});
+    fem::set_bc<T, U>(b.mutable_array(), {bc});
 
     // Solver: A.u = b
+    dolfinx::common::Timer tsolve("#### SUPERLU Solver ####");
     superlu_solver(mesh->comm(), A, b, *u.x());
+    tsolve.stop();
 
     // The function ``u`` will be modified during the call to solve. A
     // :cpp:class:`Function` can be saved to a file. Here, we output the
@@ -248,8 +251,19 @@ int main(int argc, char* argv[])
 
     // Save solution in VTK format
     io::VTKFile file(MPI_COMM_WORLD, "u.pvd", "w");
-    file.write<T>({u}, 0.0);
+    if constexpr (std::is_same_v<T, float>)
+    {
+      fem::Function<double, U> udouble(V);
+      // Convert float to double
+      std::copy(u.x()->array().begin(), u.x()->array().end(),
+                udouble.x()->mutable_array().begin());
+      file.write<double>({udouble}, 0.0);
+    }
+    else
+      file.write<T>({u}, 0.0);
   }
+
+  dolfinx::list_timings(MPI_COMM_WORLD, {TimingType::wall});
 
   MPI_Finalize();
   return 0;

@@ -9,6 +9,7 @@
 /// @param Amat CSR Matrix, distributed by row and finalized
 /// @param bvec RHS vector
 /// @param uvec Solution vector
-int superlu_solver(MPI_Comm comm, dolfinx::la::MatrixCSR<double>& Amat,
-                   const dolfinx::la::Vector<double>& bvec,
-                   dolfinx::la::Vector<double>& uvec);
+template <typename T>
+int superlu_solver(MPI_Comm comm, dolfinx::la::MatrixCSR<T>& Amat,
+                   const dolfinx::la::Vector<T>& bvec,
+                   dolfinx::la::Vector<T>& uvec);

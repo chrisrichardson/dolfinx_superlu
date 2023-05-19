@@ -1,12 +1,15 @@
 
 #include "superlu_ddefs.h"
+#include "superlu_sdefs.h"
+#include "superlu_zdefs.h"
 #include <dolfinx/la/MatrixCSR.h>
 #include <dolfinx/la/Vector.h>
 
 using namespace dolfinx;
 
-int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
-                   const la::Vector<double>& bvec, la::Vector<double>& uvec)
+template <typename T>
+int superlu_solver(MPI_Comm comm, la::MatrixCSR<T>& Amat,
+                   const la::Vector<T>& bvec, la::Vector<T>& uvec)
 {
   int size = dolfinx::MPI::size(comm);
 
@@ -19,7 +22,7 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   }
 
   gridinfo3d_t grid;
-  superlu_gridinit3d(comm, nprow, 1, np, &grid);
+  superlu_gridinit3d(comm, nprow, np, 1, &grid);
 
   // Global size
   int m = Amat.index_map(0)->size_global();
@@ -48,27 +51,36 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   // Local number of non-zeros
   int nnz_loc = row_ptr[m_loc];
 
-  dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
-                                 Amat.values().data(), cols.data(),
-                                 row_ptr.data(), SLU_NR_loc, SLU_D, SLU_GE);
+  if constexpr (std::is_same_v<T, double>)
+  {
+    dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
+                                   Amat.values().data(), cols.data(),
+                                   row_ptr.data(), SLU_NR_loc, SLU_D, SLU_GE);
+  }
+  else if constexpr (std::is_same_v<T, float>)
+  {
+    sCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
+                                   Amat.values().data(), cols.data(),
+                                   row_ptr.data(), SLU_NR_loc, SLU_S, SLU_GE);
+    std::cout << "OK\n";
+  }
+  else if constexpr (std::is_same_v<T, std::complex<double>>)
+  {
+    zCreate_CompRowLoc_Matrix_dist(
+        &A, m, n, nnz_loc, m_loc, first_row,
+        reinterpret_cast<doublecomplex*>(Amat.values().data()), cols.data(),
+        row_ptr.data(), SLU_NR_loc, SLU_Z, SLU_GE);
+  }
 
   // RHS
   int ldb = m_loc;
   int nrhs = 1;
-  std::vector<double> berr(nrhs);
 
   superlu_dist_options_t options;
   set_default_options_dist(&options);
   options.Algo3d = YES;
   options.DiagInv = YES;
   options.ReplaceTinyPivot = YES;
-
-  dScalePermstruct_t ScalePermstruct;
-  dLUstruct_t LUstruct;
-  dScalePermstructInit(m, n, &ScalePermstruct);
-  dLUstructInit(n, &LUstruct);
-
-  dSOLVEstruct_t SOLVEstruct;
 
   int info = 0;
   SuperLUStat_t stat;
@@ -78,8 +90,44 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   std::copy(bvec.array().begin(), std::next(bvec.array().begin(), m_loc),
             uvec.mutable_array().begin());
 
-  pdgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
-            nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
+  if constexpr (std::is_same_v<T, double>)
+  {
+    std::vector<T> berr(nrhs);
+    dScalePermstruct_t ScalePermstruct;
+    dLUstruct_t LUstruct;
+    dScalePermstructInit(m, n, &ScalePermstruct);
+    dLUstructInit(n, &LUstruct);
+    dSOLVEstruct_t SOLVEstruct;
+
+    pdgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
+              nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
+  }
+  else if constexpr (std::is_same_v<T, float>)
+  {
+    std::vector<T> berr(nrhs);
+    sScalePermstruct_t ScalePermstruct;
+    sLUstruct_t LUstruct;
+    sScalePermstructInit(m, n, &ScalePermstruct);
+    sLUstructInit(n, &LUstruct);
+    sSOLVEstruct_t SOLVEstruct;
+
+    psgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
+              nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
+  }
+  else if constexpr (std::is_same_v<T, std::complex<double>>)
+  {
+    std::vector<double> berr(nrhs);
+    zScalePermstruct_t ScalePermstruct;
+    zLUstruct_t LUstruct;
+    zScalePermstructInit(m, n, &ScalePermstruct);
+    zLUstructInit(n, &LUstruct);
+    zSOLVEstruct_t SOLVEstruct;
+
+    pzgssvx3d(&options, &A, &ScalePermstruct,
+              reinterpret_cast<doublecomplex*>(uvec.mutable_array().data()),
+              ldb, nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat,
+              &info);
+  }
 
   if (info)
   { /* Something is wrong */
@@ -94,3 +142,17 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   uvec.scatter_fwd();
   return 0;
 }
+
+// Explicit instantiation
+template int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
+                            const la::Vector<double>& bvec,
+                            la::Vector<double>& uvec);
+
+template int superlu_solver(MPI_Comm comm, la::MatrixCSR<float>& Amat,
+                            const la::Vector<float>& bvec,
+                            la::Vector<float>& uvec);
+
+template int superlu_solver(MPI_Comm comm,
+                            la::MatrixCSR<std::complex<double>>& Amat,
+                            const la::Vector<std::complex<double>>& bvec,
+                            la::Vector<std::complex<double>>& uvec);
