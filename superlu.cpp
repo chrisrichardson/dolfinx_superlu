@@ -10,8 +10,16 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
 {
   int size = dolfinx::MPI::size(comm);
 
+  int nprow = size;
+  int np = 1;
+  while (nprow % 2 == 0)
+  {
+    np *= 2;
+    nprow /= 2;
+  }
+
   gridinfo3d_t grid;
-  superlu_gridinit3d(comm, 1, 1, size, &grid);
+  superlu_gridinit3d(comm, nprow, 1, np, &grid);
 
   // Global size
   int m = Amat.index_map(0)->size_global();
