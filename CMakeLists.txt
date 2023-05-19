@@ -44,8 +44,8 @@ add_custom_command(
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 add_executable(${PROJECT_NAME} superlu.cpp main.cpp ${CMAKE_CURRENT_BINARY_DIR}/poisson.c)
-target_link_directories(${PROJECT_NAME} PUBLIC /Users/chrisrichardson/Work/packages/petsc/lib)
-target_include_directories(${PROJECT_NAME} PUBLIC /Users/chrisrichardson/Work/packages/petsc/include)
+target_link_directories(${PROJECT_NAME} PUBLIC /opt/packages/petsc-3.17.2/lib)
+target_include_directories(${PROJECT_NAME} PUBLIC /opt/packages/petsc-3.17.2/include)
 target_link_libraries(${PROJECT_NAME} dolfinx superlu_dist)
 
 # Do not throw error for 'multi-line comments' (these are typical in rst which

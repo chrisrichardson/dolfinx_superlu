@@ -19,7 +19,7 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   int np = 1;
   while (nprow % 2 == 0)
   {
-    npcol *= 2;
+    np *= 2;
     nprow /= 2;
   }
 
@@ -44,7 +44,8 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   int_t* rowptr = (int_t*)intMalloc_dist(m_loc + 1);
 
   // Copy row_ptr from int64
-  std::copy(Amat.row_ptr().begin(), Amat.row_ptr().end(), rowptr);
+  std::copy(Amat.row_ptr().begin(),
+            std::next(Amat.row_ptr().begin(), m_loc + 1), rowptr);
 
   // Convert local to global indices (and cast to int_t)
   std::vector<std::int64_t> global_col_indices(
