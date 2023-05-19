@@ -38,42 +38,49 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   // First row
   int first_row = Amat.index_map(0)->local_range()[0];
 
-  SuperMatrix A;
+  // Local number of non-zeros
+  int nnz_loc = Amat.row_ptr()[m_loc];
+  int_t* cols = (int_t*)intMalloc_dist(nnz_loc);
+  int_t* rowptr = (int_t*)intMalloc_dist(m_loc + 1);
 
-  // Copy from int64
-  std::vector<int_t> row_ptr(Amat.row_ptr().begin(), Amat.row_ptr().end());
+  // Copy row_ptr from int64
+  std::copy(Amat.row_ptr().begin(), Amat.row_ptr().end(), rowptr);
 
   // Convert local to global indices (and cast to int_t)
-  std::vector<int_t> cols(Amat.cols().size());
   std::vector<std::int64_t> global_col_indices(
       Amat.index_map(1)->global_indices());
-  std::transform(Amat.cols().begin(), Amat.cols().end(), cols.begin(),
+  std::transform(Amat.cols().begin(), std::next(Amat.cols().begin(), nnz_loc),
+                 cols,
                  [&](std::int64_t local_index)
                  { return global_col_indices[local_index]; });
-  // Local number of non-zeros
-  int nnz_loc = row_ptr[m_loc];
 
+  SuperMatrix A;
   if constexpr (std::is_same_v<T, double>)
   {
-    auto Amatdata = const_cast<double*>(Amat.values().data());
+    double* Amatdata = (double*)doubleMalloc_dist(nnz_loc);
+    std::copy(Amat.values().begin(), std::next(Amat.values().begin(), nnz_loc),
+              Amatdata);
     dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
-                                   Amatdata, cols.data(), row_ptr.data(),
-                                   SLU_NR_loc, SLU_D, SLU_GE);
+                                   Amatdata, cols, rowptr, SLU_NR_loc, SLU_D,
+                                   SLU_GE);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
-    auto Amatdata = const_cast<float*>(Amat.values().data());
+    float* Amatdata = (float*)floatMalloc_dist(nnz_loc);
+    std::copy(Amat.values().begin(), std::next(Amat.values().begin(), nnz_loc),
+              Amatdata);
     sCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
-                                   Amatdata, cols.data(), row_ptr.data(),
-                                   SLU_NR_loc, SLU_S, SLU_GE);
+                                   Amatdata, cols, rowptr, SLU_NR_loc, SLU_S,
+                                   SLU_GE);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
-    auto Amatdata = const_cast<std::complex<double>*>(Amat.values().data());
+    doublecomplex* Amatdata = (doublecomplex*)doublecomplexMalloc_dist(nnz_loc);
+    std::copy(Amat.values().begin(), std::next(Amat.values().begin(), nnz_loc),
+              reinterpret_cast<std::complex<double>*>(Amatdata));
     zCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
                                    reinterpret_cast<doublecomplex*>(Amatdata),
-                                   cols.data(), row_ptr.data(), SLU_NR_loc,
-                                   SLU_Z, SLU_GE);
+                                   cols, rowptr, SLU_NR_loc, SLU_Z, SLU_GE);
   }
 
   // RHS
@@ -108,6 +115,7 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
     dScalePermstructFree(&ScalePermstruct);
     dLUstructFree(&LUstruct);
+    dSolveFinalize(&options, &SOLVEstruct);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
@@ -121,8 +129,9 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     psgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
               nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
 
-    sScalePermstructFree(&ScalePermstruct);
+    sSolveFinalize(&options, &SOLVEstruct);
     sLUstructFree(&LUstruct);
+    sScalePermstructFree(&ScalePermstruct);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
@@ -140,18 +149,19 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
     zScalePermstructFree(&ScalePermstruct);
     zLUstructFree(&LUstruct);
+    zSolveFinalize(&options, &SOLVEstruct);
   }
+  Destroy_CompRowLoc_Matrix_dist(&A);
 
   if (info)
   {
-    // Something is wrong
     std::cout << "ERROR: INFO = " << info << " returned from p*gssvx3d()\n"
               << std::flush;
   }
 
   PStatPrint(&options, &stat, &grid.grid2d);
-
   PStatFree(&stat);
+
   superlu_gridexit3d(&grid);
 
   // Update ghosts in u
