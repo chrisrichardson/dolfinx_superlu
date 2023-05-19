@@ -126,11 +126,11 @@ int main(int argc, char* argv[])
   {
     // Create mesh and function space
     auto part = mesh::create_cell_partitioner(mesh::GhostMode::shared_facet);
-    auto mesh = std::make_shared<mesh::Mesh<double>>(
-        mesh::create_rectangle(MPI_COMM_WORLD, {{{0.0, 0.0}, {2.0, 1.0}}},
-                               {64, 32}, mesh::CellType::triangle, part));
+    auto mesh = std::make_shared<mesh::Mesh<U>>(
+        mesh::create_rectangle<U>(MPI_COMM_WORLD, {{{0.0, 0.0}, {2.0, 1.0}}},
+                                  {64, 32}, mesh::CellType::triangle, part));
 
-    auto V = std::make_shared<fem::FunctionSpace<double>>(
+    auto V = std::make_shared<fem::FunctionSpace<U>>(
         fem::create_functionspace(functionspace_form_poisson_a, "u", mesh));
 
     // Next, we define the variational formulation by initializing the
