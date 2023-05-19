@@ -236,7 +236,7 @@ int main(int argc, char* argv[])
     b.scatter_rev(std::plus<T>());
     fem::set_bc<T, double>(b.mutable_array(), {bc});
 
-    // Solver here - replaces b
+    // Solver: A.u = b
     superlu_solver(mesh->comm(), A, b, *u.x());
 
     // The function ``u`` will be modified during the call to solve. A
