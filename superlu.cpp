@@ -62,7 +62,6 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<T>& Amat,
     sCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
                                    Amat.values().data(), cols.data(),
                                    row_ptr.data(), SLU_NR_loc, SLU_S, SLU_GE);
-    std::cout << "OK\n";
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
@@ -130,9 +129,10 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<T>& Amat,
   }
 
   if (info)
-  { /* Something is wrong */
-    printf("ERROR: INFO = %d returned from pdgssvx3d()\n", info);
-    fflush(stdout);
+  {
+    // Something is wrong
+    std::cout << "ERROR: INFO = " << info << " returned from p*gssvx3d()\n"
+              << std::flush;
   }
 
   PStatFree(&stat);
@@ -140,7 +140,7 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<T>& Amat,
 
   // Update ghosts in u
   uvec.scatter_fwd();
-  return 0;
+  return info;
 }
 
 // Explicit instantiation
