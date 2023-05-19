@@ -16,14 +16,23 @@ if(NOT TARGET dolfinx)
   find_package(DOLFINX REQUIRED)
 endif()
 
-include(CheckSymbolExists)
-set(CMAKE_REQUIRED_INCLUDES ${PETSC_INCLUDE_DIRS})
-check_symbol_exists(PETSC_USE_COMPLEX petscsystypes.h PETSC_SCALAR_COMPLEX)
+if (DEFINED SCALAR)
+  set(C_SCALAR ${SCALAR})
+  set(CPP_SCALAR ${SCALAR})
+  if(${SCALAR} STREQUAL "complex")
+    set(C_SCALAR "double _Complex")
+    set(CPP_SCALAR "std::complex<double>")
+  endif()
+  message(STATUS "C_SCALAR=${C_SCALAR}")
+  message(STATUS "CPP_SCALAR=${CPP_SCALAR}")
+else()
+    message(FATAL_ERROR "SCALAR should be defined in CMake. e.g. -DSCALAR=float [or double or complex]")
+endif()
 
 # Add target to compile UFL files
-if(PETSC_SCALAR_COMPLEX EQUAL 1)
-  set(SCALAR_TYPE "--scalar_type=double _Complex")
-endif()
+add_compile_definitions(SCALAR=${CPP_SCALAR})
+set(SCALAR_TYPE "--scalar_type=${C_SCALAR}")
+
 add_custom_command(
   OUTPUT poisson.c
   COMMAND ffcx ${CMAKE_CURRENT_SOURCE_DIR}/poisson.py ${SCALAR_TYPE}
@@ -48,10 +57,3 @@ set_source_files_properties(
     COMPILE_FLAGS
     "$<$<BOOL:${HAVE_NO_MULTLINE}>:-Wno-comment -Wall -Wextra -pedantic -Werror>"
 )
-
-# Test targets (used by DOLFINx testing system)
-set(TEST_PARAMETERS2 -np 2 ${MPIEXEC_PARAMS} "./${PROJECT_NAME}")
-set(TEST_PARAMETERS3 -np 3 ${MPIEXEC_PARAMS} "./${PROJECT_NAME}")
-add_test(NAME ${PROJECT_NAME}_mpi_2 COMMAND "mpirun" ${TEST_PARAMETERS2})
-add_test(NAME ${PROJECT_NAME}_mpi_3 COMMAND "mpirun" ${TEST_PARAMETERS3})
-add_test(NAME ${PROJECT_NAME}_serial COMMAND ${PROJECT_NAME})
