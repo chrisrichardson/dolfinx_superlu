@@ -8,32 +8,23 @@ using namespace dolfinx;
 int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
                    const la::Vector<double>& bvec, la::Vector<double>& uvec)
 {
-  int rank, size;
-
-  MPI_Comm_rank(comm, &rank);
-  MPI_Comm_size(comm, &size);
+  int size = dolfinx::MPI::size(comm);
 
   gridinfo3d_t grid;
   superlu_gridinit3d(comm, 1, 1, size, &grid);
 
-  printf("iam = %d\n", grid.iam);
-  fflush(stdout);
-
-  printf("size = %d\n", size);
-  fflush(stdout);
-
   // Number of local rows
   int m_loc = Amat.num_owned_rows();
-  int m;
-  MPI_Allreduce(&m_loc, &m, 1, MPI_INT, MPI_SUM, comm);
+  int m = Amat.index_map(0)->size_global();
 
   // Global size
-  int n = m;
+  int n = Amat.index_map(1)->size_global();
 
-  // First row?
-  int fst_row = 0;
-  MPI_Scan(&m_loc, &fst_row, 1, MPI_INT, MPI_SUM, comm);
-  fst_row -= m_loc;
+  if (m != n)
+    throw std::runtime_error("Can't solve non-square system");
+
+  // First row
+  int first_row = Amat.index_map(0)->local_range()[0];
 
   SuperMatrix A;
 
@@ -50,30 +41,9 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   // Local number of non-zeros
   int nnz_loc = row_ptr[m_loc];
 
-  std::stringstream s;
-
-#if 0
-  s << "row_ptr.size = " << row_ptr.size() << std::endl;
-  s << "nnz_loca = " << nnz_loc << std::endl;
-  s << "m = " << m << std::endl;
-  s << "n = " << n << std::endl;
-  s << "m_loc = " << m_loc << std::endl;
-  s << "fst row = " << fst_row << "\n";
-
-  for (int i = 0; i < m_loc; ++i)
-    for (int j = row_ptr[i]; j < row_ptr[i + 1]; ++j)
-      if (cols.data()[j] == i + fst_row)
-        s << "diag (" << i + fst_row << ") = " << Amat.values().data()[j]
-          << "\n";
-
-  std::cout << s.str() << "\n";
-#endif
-
-  dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, fst_row,
+  dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
                                  Amat.values().data(), cols.data(),
                                  row_ptr.data(), SLU_NR_loc, SLU_D, SLU_GE);
-
-  printf("* %d %d\n", m, n);
 
   // RHS
   int ldb = m_loc;
@@ -88,9 +58,6 @@ int superlu_solver(MPI_Comm comm, la::MatrixCSR<double>& Amat,
   options.Algo3d = YES;
   options.DiagInv = YES;
   options.ReplaceTinyPivot = YES;
-
-  printf("%d %d\n", m, n);
-  fflush(stdout);
 
   dScalePermstruct_t ScalePermstruct;
   dLUstruct_t LUstruct;
