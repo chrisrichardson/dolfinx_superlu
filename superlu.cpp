@@ -4,6 +4,7 @@
 #include "superlu_zdefs.h"
 #include <dolfinx/la/MatrixCSR.h>
 #include <dolfinx/la/Vector.h>
+#include <iostream>
 
 using namespace dolfinx;
 
@@ -14,15 +15,16 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   int size = dolfinx::MPI::size(comm);
 
   int nprow = size;
+  int npcol = 1;
   int np = 1;
   while (nprow % 2 == 0)
   {
-    np *= 2;
+    npcol *= 2;
     nprow /= 2;
   }
 
   gridinfo3d_t grid;
-  superlu_gridinit3d(comm, nprow, np, 1, &grid);
+  superlu_gridinit3d(comm, nprow, npcol, np, &grid);
 
   // Global size
   int m = Amat.index_map(0)->size_global();
@@ -103,6 +105,9 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
     pdgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
               nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
+
+    dScalePermstructFree(&ScalePermstruct);
+    dLUstructFree(&LUstruct);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
@@ -115,6 +120,9 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
     psgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
               nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
+
+    sScalePermstructFree(&ScalePermstruct);
+    sLUstructFree(&LUstruct);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
@@ -129,6 +137,9 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
               reinterpret_cast<doublecomplex*>(uvec.mutable_array().data()),
               ldb, nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat,
               &info);
+
+    zScalePermstructFree(&ScalePermstruct);
+    zLUstructFree(&LUstruct);
   }
 
   if (info)
@@ -137,6 +148,8 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     std::cout << "ERROR: INFO = " << info << " returned from p*gssvx3d()\n"
               << std::flush;
   }
+
+  PStatPrint(&options, &stat, &grid.grid2d);
 
   PStatFree(&stat);
   superlu_gridexit3d(&grid);
