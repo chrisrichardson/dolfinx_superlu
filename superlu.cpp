@@ -17,11 +17,11 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   int nprow = size;
   int npcol = 1;
   int np = 1;
-  while (nprow % 2 == 0)
-  {
-    np *= 2;
-    nprow /= 2;
-  }
+  // while (nprow % 2 == 0)
+  // {
+  //   np *= 2;
+  //   nprow /= 2;
+  // }
 
   gridinfo3d_t grid;
   superlu_gridinit3d(comm, nprow, npcol, np, &grid);
@@ -40,48 +40,43 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
   // Local number of non-zeros
   int nnz_loc = Amat.row_ptr()[m_loc];
-  int_t* cols = (int_t*)intMalloc_dist(nnz_loc);
-  int_t* rowptr = (int_t*)intMalloc_dist(m_loc + 1);
+  std::vector<int_t> cols(nnz_loc);
+  std::vector<int_t> rowptr(m_loc + 1);
 
   // Copy row_ptr from int64
   std::copy(Amat.row_ptr().begin(),
-            std::next(Amat.row_ptr().begin(), m_loc + 1), rowptr);
+            std::next(Amat.row_ptr().begin(), m_loc + 1), rowptr.begin());
 
   // Convert local to global indices (and cast to int_t)
   std::vector<std::int64_t> global_col_indices(
       Amat.index_map(1)->global_indices());
   std::transform(Amat.cols().begin(), std::next(Amat.cols().begin(), nnz_loc),
-                 cols,
+                 cols.begin(),
                  [&](std::int64_t local_index)
                  { return global_col_indices[local_index]; });
 
   SuperMatrix A;
   if constexpr (std::is_same_v<T, double>)
   {
-    double* Amatdata = (double*)doubleMalloc_dist(nnz_loc);
-    std::copy(Amat.values().begin(), std::next(Amat.values().begin(), nnz_loc),
-              Amatdata);
+    auto Amatdata = const_cast<double*>(Amat.values().data());
     dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
-                                   Amatdata, cols, rowptr, SLU_NR_loc, SLU_D,
-                                   SLU_GE);
+                                   Amatdata, cols.data(), rowptr.data(),
+                                   SLU_NR_loc, SLU_D, SLU_GE);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
-    float* Amatdata = (float*)floatMalloc_dist(nnz_loc);
-    std::copy(Amat.values().begin(), std::next(Amat.values().begin(), nnz_loc),
-              Amatdata);
+    auto Amatdata = const_cast<float*>(Amat.values().data());
     sCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
-                                   Amatdata, cols, rowptr, SLU_NR_loc, SLU_S,
-                                   SLU_GE);
+                                   Amatdata, cols.data(), rowptr.data(),
+                                   SLU_NR_loc, SLU_S, SLU_GE);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
-    doublecomplex* Amatdata = (doublecomplex*)doublecomplexMalloc_dist(nnz_loc);
-    std::copy(Amat.values().begin(), std::next(Amat.values().begin(), nnz_loc),
-              reinterpret_cast<std::complex<double>*>(Amatdata));
+    auto Amatdata = const_cast<std::complex<double>*>(Amat.values().data());
     zCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
                                    reinterpret_cast<doublecomplex*>(Amatdata),
-                                   cols, rowptr, SLU_NR_loc, SLU_Z, SLU_GE);
+                                   cols.data(), rowptr.data(), SLU_NR_loc,
+                                   SLU_Z, SLU_GE);
   }
 
   // RHS
@@ -117,6 +112,7 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     dScalePermstructFree(&ScalePermstruct);
     dLUstructFree(&LUstruct);
     dSolveFinalize(&options, &SOLVEstruct);
+    dDestroy_A3d_gathered_on_2d(&SOLVEstruct, &grid);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
@@ -133,6 +129,7 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     sSolveFinalize(&options, &SOLVEstruct);
     sLUstructFree(&LUstruct);
     sScalePermstructFree(&ScalePermstruct);
+    sDestroy_A3d_gathered_on_2d(&SOLVEstruct, &grid);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
@@ -151,8 +148,9 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     zScalePermstructFree(&ScalePermstruct);
     zLUstructFree(&LUstruct);
     zSolveFinalize(&options, &SOLVEstruct);
+    zDestroy_A3d_gathered_on_2d(&SOLVEstruct, &grid);
   }
-  Destroy_CompRowLoc_Matrix_dist(&A);
+  Destroy_SuperMatrix_Store_dist(&A);
 
   if (info)
   {
