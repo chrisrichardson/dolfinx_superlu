@@ -42,7 +42,7 @@ add_custom_command(
 )
 
 find_package(PkgConfig REQUIRED)
-pkg_search_module(SuperLU REQUIRED SuperLU_DIST)
+pkg_search_module(SuperLU REQUIRED superlu_dist)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
