@@ -41,11 +41,15 @@ add_custom_command(
   COMMENT "Compile poisson.py using FFCx"
 )
 
+find_package(PkgConfig REQUIRED)
+pkg_search_module(SuperLU REQUIRED SuperLU_DIST)
+
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+
 add_executable(${PROJECT_NAME} superlu.cpp main.cpp ${CMAKE_CURRENT_BINARY_DIR}/poisson.c)
-target_link_directories(${PROJECT_NAME} PUBLIC /opt/packages/petsc-3.17.2/lib)
-target_include_directories(${PROJECT_NAME} PUBLIC /opt/packages/petsc-3.17.2/include)
+target_include_directories(${PROJECT_NAME} PUBLIC ${SuperLU_INCLUDE_DIRS})
+target_link_directories(${PROJECT_NAME} PUBLIC ${SuperLU_LIBRARY_DIRS})
 target_link_libraries(${PROJECT_NAME} dolfinx superlu_dist)
 
 # Do not throw error for 'multi-line comments' (these are typical in rst which
