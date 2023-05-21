@@ -16,15 +16,9 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
   int nprow = size;
   int npcol = 1;
-  int np = 1;
-  // while (nprow % 2 == 0)
-  // {
-  //   np *= 2;
-  //   nprow /= 2;
-  // }
 
-  gridinfo3d_t grid;
-  superlu_gridinit3d(comm, nprow, npcol, np, &grid);
+  gridinfo_t grid;
+  superlu_gridinit(MPI_COMM_WORLD, nprow, npcol, &grid);
 
   // Global size
   int m = Amat.index_map(0)->size_global();
@@ -85,7 +79,6 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
   superlu_dist_options_t options;
   set_default_options_dist(&options);
-  options.Algo3d = YES;
   options.DiagInv = YES;
   options.ReplaceTinyPivot = YES;
 
@@ -106,13 +99,12 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     dLUstructInit(n, &LUstruct);
     dSOLVEstruct_t SOLVEstruct;
 
-    pdgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
-              nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
+    pdgssvx(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
+            nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
 
     dScalePermstructFree(&ScalePermstruct);
     dLUstructFree(&LUstruct);
     dSolveFinalize(&options, &SOLVEstruct);
-    dDestroy_A3d_gathered_on_2d(&SOLVEstruct, &grid);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
@@ -123,13 +115,12 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     sLUstructInit(n, &LUstruct);
     sSOLVEstruct_t SOLVEstruct;
 
-    psgssvx3d(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
-              nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
+    psgssvx(&options, &A, &ScalePermstruct, uvec.mutable_array().data(), ldb,
+            nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
 
     sSolveFinalize(&options, &SOLVEstruct);
     sLUstructFree(&LUstruct);
     sScalePermstructFree(&ScalePermstruct);
-    sDestroy_A3d_gathered_on_2d(&SOLVEstruct, &grid);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
@@ -140,28 +131,26 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
     zLUstructInit(n, &LUstruct);
     zSOLVEstruct_t SOLVEstruct;
 
-    pzgssvx3d(&options, &A, &ScalePermstruct,
-              reinterpret_cast<doublecomplex*>(uvec.mutable_array().data()),
-              ldb, nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat,
-              &info);
+    pzgssvx(&options, &A, &ScalePermstruct,
+            reinterpret_cast<doublecomplex*>(uvec.mutable_array().data()), ldb,
+            nrhs, &grid, &LUstruct, &SOLVEstruct, berr.data(), &stat, &info);
 
     zScalePermstructFree(&ScalePermstruct);
     zLUstructFree(&LUstruct);
     zSolveFinalize(&options, &SOLVEstruct);
-    zDestroy_A3d_gathered_on_2d(&SOLVEstruct, &grid);
   }
   Destroy_SuperMatrix_Store_dist(&A);
 
   if (info)
   {
-    std::cout << "ERROR: INFO = " << info << " returned from p*gssvx3d()\n"
+    std::cout << "ERROR: INFO = " << info << " returned from p*gssvx()\n"
               << std::flush;
   }
 
-  PStatPrint(&options, &stat, &grid.grid2d);
+  PStatPrint(&options, &stat, &grid);
   PStatFree(&stat);
 
-  superlu_gridexit3d(&grid);
+  superlu_gridexit(&grid);
 
   // Update ghosts in u
   uvec.scatter_fwd();
