@@ -10,7 +10,7 @@ using namespace dolfinx;
 
 template <typename T>
 int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
-                   const la::Vector<T>& bvec, la::Vector<T>& uvec)
+                   const la::Vector<T>& bvec, la::Vector<T>& uvec, bool verbose)
 {
   int size = dolfinx::MPI::size(comm);
 
@@ -50,23 +50,21 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
                  { return global_col_indices[local_index]; });
 
   SuperMatrix A;
+  auto Amatdata = const_cast<T*>(Amat.values().data());
   if constexpr (std::is_same_v<T, double>)
   {
-    auto Amatdata = const_cast<double*>(Amat.values().data());
     dCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
                                    Amatdata, cols.data(), rowptr.data(),
                                    SLU_NR_loc, SLU_D, SLU_GE);
   }
   else if constexpr (std::is_same_v<T, float>)
   {
-    auto Amatdata = const_cast<float*>(Amat.values().data());
     sCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
                                    Amatdata, cols.data(), rowptr.data(),
                                    SLU_NR_loc, SLU_S, SLU_GE);
   }
   else if constexpr (std::is_same_v<T, std::complex<double>>)
   {
-    auto Amatdata = const_cast<std::complex<double>*>(Amat.values().data());
     zCreate_CompRowLoc_Matrix_dist(&A, m, n, nnz_loc, m_loc, first_row,
                                    reinterpret_cast<doublecomplex*>(Amatdata),
                                    cols.data(), rowptr.data(), SLU_NR_loc,
@@ -81,6 +79,8 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   set_default_options_dist(&options);
   options.DiagInv = YES;
   options.ReplaceTinyPivot = YES;
+  if (!verbose)
+    options.PrintStat = NO;
 
   int info = 0;
   SuperLUStat_t stat;
@@ -147,7 +147,8 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
               << std::flush;
   }
 
-  PStatPrint(&options, &stat, &grid);
+  if (verbose)
+    PStatPrint(&options, &stat, &grid);
   PStatFree(&stat);
 
   superlu_gridexit(&grid);
@@ -158,15 +159,14 @@ int superlu_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 }
 
 // Explicit instantiation
-template int superlu_solver(MPI_Comm comm, const la::MatrixCSR<double>& Amat,
-                            const la::Vector<double>& bvec,
-                            la::Vector<double>& uvec);
+template int superlu_solver(MPI_Comm, const la::MatrixCSR<double>&,
+                            const la::Vector<double>&, la::Vector<double>&,
+                            bool);
 
-template int superlu_solver(MPI_Comm comm, const la::MatrixCSR<float>& Amat,
-                            const la::Vector<float>& bvec,
-                            la::Vector<float>& uvec);
+template int superlu_solver(MPI_Comm, const la::MatrixCSR<float>&,
+                            const la::Vector<float>&, la::Vector<float>&, bool);
 
-template int superlu_solver(MPI_Comm comm,
-                            const la::MatrixCSR<std::complex<double>>& Amat,
-                            const la::Vector<std::complex<double>>& bvec,
-                            la::Vector<std::complex<double>>& uvec);
+template int superlu_solver(MPI_Comm,
+                            const la::MatrixCSR<std::complex<double>>&,
+                            const la::Vector<std::complex<double>>&,
+                            la::Vector<std::complex<double>>&, bool);

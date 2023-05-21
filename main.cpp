@@ -105,7 +105,7 @@ int main(int argc, char* argv[])
 
     // Solver: A.u = b
     dolfinx::common::Timer tsolve("_ SUPERLU Solver");
-    superlu_solver(mesh->comm(), A, b, *u.x());
+    superlu_solver(mesh->comm(), A, b, *u.x(), false);
     tsolve.stop();
 
     // Save solution in VTK format
