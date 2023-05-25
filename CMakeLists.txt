@@ -55,7 +55,7 @@ add_executable(${PROJECT_NAME} mumps.cpp superlu.cpp main.cpp ${CMAKE_CURRENT_BI
 target_include_directories(${PROJECT_NAME} PUBLIC ${SuperLU_INCLUDE_DIRS})
 target_link_directories(${PROJECT_NAME} PUBLIC ${SuperLU_LIBRARY_DIRS})
 target_link_directories(${PROJECT_NAME} PUBLIC /opt/homebrew/lib)
-target_link_libraries(${PROJECT_NAME} dolfinx superlu_dist zmumps cmumps dmumps smumps gfortran mumps_common metis scalapack parmetis blas mpifort lapack)
+target_link_libraries(${PROJECT_NAME} dolfinx superlu_dist zmumps cmumps dmumps smumps gfortran mumps_common metis scalapack parmetis blas mpifort lapack pord)
 
 # Do not throw error for 'multi-line comments' (these are typical in rst which
 # includes LaTeX)
