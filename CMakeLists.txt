@@ -47,8 +47,9 @@ pkg_search_module(SuperLU REQUIRED superlu_dist)
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 
-add_executable(${PROJECT_NAME} superlu.cpp main.cpp ${CMAKE_CURRENT_BINARY_DIR}/poisson.c)
+add_executable(${PROJECT_NAME} mumps.cpp superlu.cpp main.cpp ${CMAKE_CURRENT_BINARY_DIR}/poisson.c)
 target_include_directories(${PROJECT_NAME} PUBLIC ${SuperLU_INCLUDE_DIRS})
+target_include_directories(${PROJECT_NAME} PUBLIC /opt/packages/petsc-3.17.2/include)
 target_link_directories(${PROJECT_NAME} PUBLIC ${SuperLU_LIBRARY_DIRS})
 target_link_libraries(${PROJECT_NAME} dolfinx superlu_dist)
 

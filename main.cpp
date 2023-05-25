@@ -1,3 +1,4 @@
+#include "mumps.h"
 #include "poisson.h"
 #include "superlu.h"
 #include <cmath>
@@ -22,9 +23,9 @@ int main(int argc, char* argv[])
   {
     // Create mesh and function space
     auto part = mesh::create_cell_partitioner(mesh::GhostMode::shared_facet);
-    auto mesh = std::make_shared<mesh::Mesh<U>>(mesh::create_box<U>(
-        MPI_COMM_WORLD, {{{0.0, 0.0, 0.0}, {2.0, 1.0, 1.0}}}, {160, 32, 32},
-        mesh::CellType::tetrahedron, part));
+    auto mesh = std::make_shared<mesh::Mesh<U>>(
+        mesh::create_rectangle<U>(MPI_COMM_WORLD, {{{0.0, 0.0}, {1.0, 1.0}}},
+                                  {16, 16}, mesh::CellType::triangle, part));
 
     auto V = std::make_shared<fem::FunctionSpace<U>>(
         fem::create_functionspace(functionspace_form_poisson_a, "u", mesh));
@@ -105,7 +106,9 @@ int main(int argc, char* argv[])
 
     // Solver: A.u = b
     dolfinx::common::Timer tsolve("_ SUPERLU Solver");
-    superlu_solver(mesh->comm(), A, b, *u.x(), false);
+    //    superlu_solver(mesh->comm(), A, b, *u.x(), false);
+    mumps_solver(mesh->comm(), A, b, *u.x(), false);
+
     tsolve.stop();
 
     // Save solution in VTK format
