@@ -22,7 +22,11 @@ if (DEFINED SCALAR)
   if(${SCALAR} STREQUAL "complex")
     set(C_SCALAR "double _Complex")
     set(CPP_SCALAR "std::complex<double>")
+  elseif(${SCALAR} STREQUAL "scomplex")
+    set(C_SCALAR "float _Complex")
+    set(CPP_SCALAR "std::complex<float>")
   endif()
+
   message(STATUS "C_SCALAR=${C_SCALAR}")
   message(STATUS "CPP_SCALAR=${CPP_SCALAR}")
 else()
@@ -49,9 +53,9 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
 add_executable(${PROJECT_NAME} mumps.cpp superlu.cpp main.cpp ${CMAKE_CURRENT_BINARY_DIR}/poisson.c)
 target_include_directories(${PROJECT_NAME} PUBLIC ${SuperLU_INCLUDE_DIRS})
-target_include_directories(${PROJECT_NAME} PUBLIC /opt/packages/petsc-3.17.2/include)
 target_link_directories(${PROJECT_NAME} PUBLIC ${SuperLU_LIBRARY_DIRS})
-target_link_libraries(${PROJECT_NAME} dolfinx superlu_dist)
+target_link_directories(${PROJECT_NAME} PUBLIC /opt/homebrew/lib)
+target_link_libraries(${PROJECT_NAME} dolfinx superlu_dist zmumps cmumps dmumps smumps gfortran mumps_common metis scalapack parmetis blas mpifort lapack)
 
 # Do not throw error for 'multi-line comments' (these are typical in rst which
 # includes LaTeX)

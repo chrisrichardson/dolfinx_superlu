@@ -105,8 +105,9 @@ int main(int argc, char* argv[])
     fem::set_bc<T, U>(b.mutable_array(), {bc});
 
     // Solver: A.u = b
-    dolfinx::common::Timer tsolve("_ SUPERLU Solver");
-    // superlu_solver(mesh->comm(), A, b, *u.x(), false);
+    // dolfinx::common::Timer tsolve("_ SUPERLU Solver");
+    //    superlu_solver(mesh->comm(), A, b, *u.x(), false);
+    dolfinx::common::Timer tsolve("_ MUMPS Solver");
     mumps_solver(mesh->comm(), A, b, *u.x(), false);
 
     tsolve.stop();
@@ -120,6 +121,14 @@ int main(int argc, char* argv[])
       std::copy(u.x()->array().begin(), u.x()->array().end(),
                 udouble.x()->mutable_array().begin());
       file.write<double>({udouble}, 0.0);
+    }
+    else if constexpr (std::is_same_v<T, std::complex<float>>)
+    {
+      fem::Function<std::complex<double>, U> udouble(V);
+      // Convert float to double
+      std::copy(u.x()->array().begin(), u.x()->array().end(),
+                udouble.x()->mutable_array().begin());
+      file.write<std::complex<double>>({udouble}, 0.0);
     }
     else
       file.write<T>({u}, 0.0);

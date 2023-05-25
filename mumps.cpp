@@ -1,6 +1,9 @@
 
+#include "cmumps_c.h"
 #include "dmumps_c.h"
 #include "smumps_c.h"
+#include "zmumps_c.h"
+
 #include <dolfinx/la/MatrixCSR.h>
 #include <dolfinx/la/Vector.h>
 #include <iostream>
@@ -19,8 +22,12 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
   typedef typename std::conditional_t<
       std::is_same_v<T, double>, DMUMPS_STRUC_C,
-      std::conditional_t<std::is_same_v<T, float>, SMUMPS_STRUC_C,
-                         std::false_type>>
+      std::conditional_t<
+          std::is_same_v<T, float>, SMUMPS_STRUC_C,
+          std::conditional_t<
+              std::is_same_v<T, std::complex<double>>, ZMUMPS_STRUC_C,
+              std::conditional_t<std::is_same_v<T, std::complex<float>>,
+                                 CMUMPS_STRUC_C, std::false_type>>>>
       MUMPS_STRUC_C;
 
   auto mumps_c = [](MUMPS_STRUC_C* id)
@@ -29,6 +36,10 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
       dmumps_c(id);
     else if constexpr (std::is_same_v<T, float>)
       smumps_c(id);
+    else if constexpr (std::is_same_v<T, std::complex<double>>)
+      zmumps_c(id);
+    else if constexpr (std::is_same_v<T, std::complex<float>>)
+      cmumps_c(id);
   };
 
   MUMPS_STRUC_C id;
@@ -83,7 +94,15 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
                  jcn.begin(),
                  [&](std::int32_t local_index)
                  { return global_col_indices[local_index] + 1; });
-  auto Amatdata = const_cast<T*>(Amat.values().data());
+
+  typedef typename std::conditional_t<
+      std::is_same_v<T, std::complex<double>>, mumps_double_complex,
+      std::conditional_t<std::is_same_v<T, std::complex<float>>, mumps_complex,
+                         T>>
+      MatType;
+
+  MatType* Amatdata;
+  Amatdata = reinterpret_cast<MatType*>(const_cast<T*>(Amat.values().data()));
 
   assert(irn.size() == jcn.size());
 
@@ -94,7 +113,7 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   id.icntl[19] = 10; // Dense RHS, distributed
   id.icntl[20] = 1;  // Distributed solution
 
-  id.rhs_loc = const_cast<T*>(bvec.array().data());
+  id.rhs_loc = reinterpret_cast<MatType*>(const_cast<T*>(bvec.array().data()));
   id.nloc_rhs = m_loc;
   id.lrhs_loc = m_loc;
   std::vector<int> irhs_loc(m_loc);
@@ -112,7 +131,7 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   int lsol_loc = id.info[22];
   std::vector<T> sol_loc(lsol_loc);
   std::vector<int> isol_loc(lsol_loc);
-  id.sol_loc = sol_loc.data();
+  id.sol_loc = reinterpret_cast<MatType*>(sol_loc.data());
   id.lsol_loc = lsol_loc;
   id.isol_loc = isol_loc.data();
 
@@ -184,5 +203,13 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 template int mumps_solver(MPI_Comm, const la::MatrixCSR<double>&,
                           const la::Vector<double>&, la::Vector<double>&, bool);
 
-// template int mumps_solver(MPI_Comm, const la::MatrixCSR<float>&,
-//                          const la::Vector<float>&, la::Vector<float>&, bool);
+template int mumps_solver(MPI_Comm, const la::MatrixCSR<float>&,
+                          const la::Vector<float>&, la::Vector<float>&, bool);
+
+template int mumps_solver(MPI_Comm, const la::MatrixCSR<std::complex<double>>&,
+                          const la::Vector<std::complex<double>>&,
+                          la::Vector<std::complex<double>>&, bool);
+
+template int mumps_solver(MPI_Comm, const la::MatrixCSR<std::complex<float>>&,
+                          const la::Vector<std::complex<float>>&,
+                          la::Vector<std::complex<float>>&, bool);
