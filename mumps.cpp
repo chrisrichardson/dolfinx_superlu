@@ -1,13 +1,13 @@
 
 #include "dmumps_c.h"
+#include "smumps_c.h"
 #include <dolfinx/la/MatrixCSR.h>
 #include <dolfinx/la/Vector.h>
 #include <iostream>
 #include <mpi.h>
+#include <type_traits>
 
 using namespace dolfinx;
-
-using T = double;
 
 template <typename T>
 int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
@@ -17,14 +17,29 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   int size = dolfinx::MPI::size(comm);
   int fcomm = MPI_Comm_c2f(comm);
 
-  DMUMPS_STRUC_C id;
+  typedef typename std::conditional_t<
+      std::is_same_v<T, double>, DMUMPS_STRUC_C,
+      std::conditional_t<std::is_same_v<T, float>, SMUMPS_STRUC_C,
+                         std::false_type>>
+      MUMPS_STRUC_C;
+
+  auto mumps_c = [](MUMPS_STRUC_C* id)
+  {
+    if constexpr (std::is_same_v<T, double>)
+      dmumps_c(id);
+    else if constexpr (std::is_same_v<T, float>)
+      smumps_c(id);
+  };
+
+  MUMPS_STRUC_C id;
 
   // Initialize
   id.job = -1;
   id.comm_fortran = fcomm;
   id.par = 1;
   id.sym = 0; // General matrix
-  dmumps_c(&id);
+
+  mumps_c(&id);
 
   id.icntl[4] = 0;  // Assembled matrix
   id.icntl[17] = 3; // Fully distributed
@@ -79,13 +94,6 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   id.icntl[19] = 10; // Dense RHS, distributed
   id.icntl[20] = 1;  // Distributed solution
 
-  std::vector<T> rhs;
-  if (rank == 0)
-  {
-    rhs.resize(m, 1.0);
-    id.rhs = rhs.data();
-  }
-
   id.rhs_loc = const_cast<T*>(bvec.array().data());
   id.nloc_rhs = m_loc;
   id.lrhs_loc = m_loc;
@@ -95,11 +103,11 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
   // Analyse
   id.job = 1;
-  dmumps_c(&id);
+  mumps_c(&id);
 
   // Factorize
   id.job = 2;
-  dmumps_c(&id);
+  mumps_c(&id);
 
   int lsol_loc = id.info[22];
   std::vector<T> sol_loc(lsol_loc);
@@ -110,7 +118,7 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
   // Solve
   id.job = 3;
-  dmumps_c(&id);
+  mumps_c(&id);
 
   // Solution is permuted across processes: reorder
   std::vector<int> perm(lsol_loc);
@@ -153,8 +161,9 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
                 MPI_INT, recv_indices.data(), recv_sizes.data(),
                 recv_offsets.data(), MPI_INT, comm);
   MPI_Alltoallv(sol_sort.data(), send_sizes.data(), send_offsets.data(),
-                MPI_DOUBLE, recv_data.data(), recv_sizes.data(),
-                recv_offsets.data(), MPI_DOUBLE, comm);
+                dolfinx::MPI::mpi_type<T>(), recv_data.data(),
+                recv_sizes.data(), recv_offsets.data(),
+                dolfinx::MPI::mpi_type<T>(), comm);
 
   // Should receive exactly enough data for local part of vector
   assert(recv_data.size() == m_loc);
@@ -166,7 +175,7 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
   // Finalize
   id.job = -2;
-  dmumps_c(&id);
+  mumps_c(&id);
 
   uvec.scatter_fwd();
   return 0;
@@ -174,3 +183,6 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
 
 template int mumps_solver(MPI_Comm, const la::MatrixCSR<double>&,
                           const la::Vector<double>&, la::Vector<double>&, bool);
+
+// template int mumps_solver(MPI_Comm, const la::MatrixCSR<float>&,
+//                          const la::Vector<float>&, la::Vector<float>&, bool);
