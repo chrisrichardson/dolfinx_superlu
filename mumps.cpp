@@ -50,15 +50,15 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   std::vector<int> jcn(nnz_loc);
 
   // Create row indices
-  int row = Amat.index_map(0)->local_range()[0];
+  int local_row_offset = Amat.index_map(0)->local_range()[0] + 1;
   std::vector<int> remote_ranges(size);
-  MPI_Allgather(&row, 1, MPI_INT, remote_ranges.data(), 1, MPI_INT, comm);
+  MPI_Allgather(&local_row_offset, 1, MPI_INT, remote_ranges.data(), 1, MPI_INT,
+                comm);
 
   for (int i = 0; i < m_loc; ++i)
   {
     for (int j = row_ptr[i]; j < row_ptr[i + 1]; ++j)
-      irn.push_back(row + 1);
-    ++row;
+      irn.push_back(i + local_row_offset);
   }
 
   // Convert local to global indices for columns
@@ -69,12 +69,6 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
                  [&](std::int32_t local_index)
                  { return global_col_indices[local_index] + 1; });
   auto Amatdata = const_cast<T*>(Amat.values().data());
-
-  std::cout << "irn = " << irn.size() << "\n";
-  std::cout << "jcn = " << jcn.size() << "\n";
-  std::cout << "nnz_loc = " << nnz_loc << "\n";
-  std::cout << "m_loc = " << m_loc << "\n";
-  std::cout << "m = " << m << "\n";
 
   assert(irn.size() == jcn.size());
 
@@ -88,7 +82,7 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   std::vector<T> rhs;
   if (rank == 0)
   {
-    rhs.resize(m, 0.0);
+    rhs.resize(m, 1.0);
     id.rhs = rhs.data();
   }
 
@@ -96,6 +90,7 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   id.nloc_rhs = m_loc;
   id.lrhs_loc = m_loc;
   std::vector<int> irhs_loc(m_loc);
+  std::iota(irhs_loc.begin(), irhs_loc.end(), local_row_offset);
   id.irhs_loc = irhs_loc.data();
 
   // Analyse
@@ -117,26 +112,63 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   id.job = 3;
   dmumps_c(&id);
 
-  std::vector<int> isol_sort(isol_loc.begin(), isol_loc.end());
-  std::sort(isol_sort.begin(), isol_sort.end());
-  // Find processor splits in data
-  std::stringstream s;
+  // Solution is permuted across processes: reorder
+  std::vector<int> perm(lsol_loc);
+  std::iota(perm.begin(), perm.end(), 0);
+  std::sort(perm.begin(), perm.end(),
+            [&](int a, int b) { return isol_loc[a] < isol_loc[b]; });
+
+  std::vector<int> isol_sort(lsol_loc);
+  std::vector<T> sol_sort(lsol_loc);
+  for (int i = 0; i < lsol_loc; ++i)
+  {
+    isol_sort[i] = isol_loc[perm[i]];
+    sol_sort[i] = sol_loc[perm[i]];
+  }
+
+  // Find processor splits in data, and send to correct process
+  std::vector<int> send_offsets;
   for (int i = 0; i < size; ++i)
   {
     auto it = std::lower_bound(isol_sort.begin(), isol_sort.end(),
                                remote_ranges[i]);
-    s << std::distance(isol_sort.begin(), it) << " ";
+    send_offsets.push_back(std::distance(isol_sort.begin(), it));
   }
-  s << "\n";
+  send_offsets.push_back(isol_sort.size());
+  std::vector<int> send_sizes(size);
+  for (int i = 0; i < size; ++i)
+    send_sizes[i] = send_offsets[i + 1] - send_offsets[i];
 
-  s << "lsol_loc = " << lsol_loc << " " << m_loc << "\n";
-  for (auto q : isol_sort)
-    s << q << ",";
-  std::cout << s.str() << std::endl;
+  std::vector<int> recv_sizes(size);
+  MPI_Alltoall(send_sizes.data(), 1, MPI_INT, recv_sizes.data(), 1, MPI_INT,
+               comm);
+  std::vector<int> recv_offsets(size + 1, 0);
+  for (int i = 0; i < size; ++i)
+    recv_offsets[i + 1] = recv_offsets[i] + recv_sizes[i];
+
+  // Send indices and data to the owning processes
+  std::vector<int> recv_indices(recv_offsets.back());
+  std::vector<T> recv_data(recv_offsets.back());
+  MPI_Alltoallv(isol_sort.data(), send_sizes.data(), send_offsets.data(),
+                MPI_INT, recv_indices.data(), recv_sizes.data(),
+                recv_offsets.data(), MPI_INT, comm);
+  MPI_Alltoallv(sol_sort.data(), send_sizes.data(), send_offsets.data(),
+                MPI_DOUBLE, recv_data.data(), recv_sizes.data(),
+                recv_offsets.data(), MPI_DOUBLE, comm);
+
+  // Should receive exactly enough data for local part of vector
+  assert(recv_data.size() == m_loc);
+
+  // Refill into u
+  auto u = uvec.mutable_array();
+  for (int i = 0; i < m_loc; ++i)
+    u[recv_indices[i] - local_row_offset] = recv_data[i];
 
   // Finalize
   id.job = -2;
   dmumps_c(&id);
+
+  uvec.scatter_fwd();
   return 0;
 }
 
