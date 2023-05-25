@@ -24,7 +24,7 @@ int main(int argc, char* argv[])
     // Create mesh and function space
     auto part = mesh::create_cell_partitioner(mesh::GhostMode::shared_facet);
     auto mesh = std::make_shared<mesh::Mesh<U>>(mesh::create_box<U>(
-        MPI_COMM_WORLD, {{{0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}}}, {32, 32, 32},
+        MPI_COMM_WORLD, {{{0.0, 0.0, 0.0}, {1.0, 1.0, 1.0}}}, {32, 32, 320},
         mesh::CellType::tetrahedron, part));
 
     auto V = std::make_shared<fem::FunctionSpace<U>>(
@@ -105,8 +105,9 @@ int main(int argc, char* argv[])
     fem::set_bc<T, U>(b.mutable_array(), {bc});
 
     // Solver: A.u = b
-    // dolfinx::common::Timer tsolve("_ SUPERLU Solver");
-    //    superlu_solver(mesh->comm(), A, b, *u.x(), false);
+    dolfinx::common::Timer tsusolve("_ SUPERLU Solver");
+    superlu_solver(mesh->comm(), A, b, *u.x(), false);
+    tsusolve.stop();
     dolfinx::common::Timer tsolve("_ MUMPS Solver");
     mumps_solver(mesh->comm(), A, b, *u.x(), false);
 

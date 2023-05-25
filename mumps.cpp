@@ -48,7 +48,7 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   id.job = -1;
   id.comm_fortran = fcomm;
   id.par = 1;
-  id.sym = 0; // General matrix
+  id.sym = 2; // symmetric matrix
 
   mumps_c(&id);
 
@@ -128,29 +128,35 @@ int mumps_solver(MPI_Comm comm, const la::MatrixCSR<T>& Amat,
   id.job = 2;
   mumps_c(&id);
 
+  // Size of local part of solution
   int lsol_loc = id.info[22];
-  std::vector<T> sol_loc(lsol_loc);
-  std::vector<int> isol_loc(lsol_loc);
-  id.sol_loc = reinterpret_cast<MatType*>(sol_loc.data());
-  id.lsol_loc = lsol_loc;
-  id.isol_loc = isol_loc.data();
-
-  // Solve
-  id.job = 3;
-  mumps_c(&id);
-
-  // Solution is permuted across processes: reorder
-  std::vector<int> perm(lsol_loc);
-  std::iota(perm.begin(), perm.end(), 0);
-  std::sort(perm.begin(), perm.end(),
-            [&](int a, int b) { return isol_loc[a] < isol_loc[b]; });
-
+  // Indices of local part of solution (sorted)
   std::vector<int> isol_sort(lsol_loc);
+  // Local part of solution (sorted into order)
   std::vector<T> sol_sort(lsol_loc);
-  for (int i = 0; i < lsol_loc; ++i)
   {
-    isol_sort[i] = isol_loc[perm[i]];
-    sol_sort[i] = sol_loc[perm[i]];
+    // Allocate memory for solution and permutation
+    std::vector<T> sol_loc(lsol_loc);
+    std::vector<int> isol_loc(lsol_loc);
+    id.sol_loc = reinterpret_cast<MatType*>(sol_loc.data());
+    id.lsol_loc = lsol_loc;
+    id.isol_loc = isol_loc.data();
+
+    // Solve
+    id.job = 3;
+    mumps_c(&id);
+
+    // Solution is permuted across processes: reorder
+    std::vector<int> perm(lsol_loc);
+    std::iota(perm.begin(), perm.end(), 0);
+    std::sort(perm.begin(), perm.end(),
+              [&](int a, int b) { return isol_loc[a] < isol_loc[b]; });
+
+    for (int i = 0; i < lsol_loc; ++i)
+    {
+      isol_sort[i] = isol_loc[perm[i]];
+      sol_sort[i] = sol_loc[perm[i]];
+    }
   }
 
   // Find processor splits in data, and send to correct process
